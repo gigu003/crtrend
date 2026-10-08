@@ -1,0 +1,16 @@
+# R session and project files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# macOS metadata
+.DS_Store
+
+# R package build and check output
+*.tar.gz
+*.Rcheck/
+
+# Temporary validation data
+/inst/extdata/

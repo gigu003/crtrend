@@ -1,0 +1,17 @@
+reference:
+  - title: Joinpoint regression
+    contents:
+      - joinpoint
+      - calc_crude_rate
+      - calc_age_adjusted_rate
+      - calc_apc
+      - calc_aapc
+      - calc_model
+      - plot_joinpoint
+  - title: Example data
+    contents:
+      - asr_inci
+      - jp_crude
+      - jp_age_adjusted
+      - jp_data
+      - jp_jump

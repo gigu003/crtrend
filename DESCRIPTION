@@ -1,0 +1,24 @@
+Package: crtrend
+Title: Joinpoint Regression for Trend Analysis
+Version: 0.1.0.9000
+Authors@R:
+    person("Qiong", "Chen", , "chenq08@126.com", role = c("aut", "cre", "cph"),
+           comment = c(ORCID = "0000-0003-2401-0046"))
+Description: Fit segmented joinpoint regression models to grouped time-series
+    data, with separate functions for annual percent change (APC) and
+    interval-specific average annual percent change (AAPC), including
+    confidence intervals.
+License: MIT + file LICENSE
+Depends:
+    R (>= 4.4.0)
+Imports:
+    rlang,
+    stats
+Suggests:
+    ggplot2,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+LazyData: true

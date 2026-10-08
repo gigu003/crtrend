@@ -1,0 +1,12 @@
+^\.git$
+^\.github$
+^\.Rproj\.user$
+^crtrend\.Rproj$
+^README\.Rmd$
+^README-cache$
+^README_files$
+^.*[.]DS_Store$
+^_pkgdown[.]yml$
+^crtrend_[.]
+^[.][.]Rcheck$
+^data-raw$
