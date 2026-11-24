@@ -48,6 +48,8 @@
 \alias{make_permutation_boundaries}
 \alias{prepare_joinpoint_data}
 \alias{fit_joinpoint_groups}
+\alias{fit_joinpoint_parallel_task}
+\alias{fit_joinpoint_group_task}
 \alias{cache_joinpoint_empirical_resamples}
 \alias{assemble_joinpoint_result}
 \alias{validate_joinpoint_inputs}
@@ -84,6 +86,7 @@
 \alias{tsprt_p_value_interval}
 \alias{candidate_sse}
 \alias{candidate_sse_batch}
+\alias{grid_projection_minima}
 \alias{model_sse}
 \alias{integer_joinpoint_grid}
 \alias{cached_integer_joinpoint_grid}
@@ -107,10 +110,19 @@
 \alias{joinpoint_plot_observations}
 \alias{joinpoint_plot_segments}
 \alias{joinpoint_plot_apc_labels}
+\alias{joinpoint_plot_apc_label_angles}
+\alias{normalize_plot_aapc_ranges}
+\alias{resolve_plot_aapc_range}
+\alias{format_plot_aapc_caption}
+\alias{joinpoint_plot_stack_aapc_labels}
 \alias{joinpoint_plot_aapc_labels}
+\alias{joinpoint_plot_overlay_aapc_labels}
+\alias{format_joinpoint_group_label}
 \alias{joinpoint_plot_bind_rows}
 \alias{format_joinpoint_estimate}
+\alias{format_joinpoint_significance}
 \alias{format_joinpoint_p_value}
+\alias{calc_binomial_outcome}
 \alias{validate_rate_data}
 \alias{validate_rate_names}
 \alias{validate_rate_numeric}
@@ -238,7 +250,10 @@ normalize_joinpoint_options(
   perm_conf,
   n_eq,
   eq_seed,
-  wbic_weight = "qr"
+  wbic_weight = "qr",
+  parallel = FALSE,
+  workers = NULL,
+  cluster = NULL
 )
 
 x \%||\% y
@@ -256,7 +271,16 @@ make_permutation_boundaries(
 
 prepare_joinpoint_data(data, time, outcome, group_vars, std_error)
 
-fit_joinpoint_groups(data, options, cache_empirical = TRUE)
+fit_joinpoint_groups(data, options)
+
+fit_joinpoint_parallel_task(task, options)
+
+fit_joinpoint_group_task(
+  group,
+  options,
+  covariance = options$covariance,
+  covariance_rows = NULL
+)
 
 cache_joinpoint_empirical_resamples(fits, n_resamples, seed = NULL)
 
@@ -309,7 +333,8 @@ prepare_group_error_model(
   error_structure,
   rho,
   covariance,
-  covariance_scale
+  covariance_scale,
+  covariance_rows = NULL
 )
 
 joinpoint_covariance(data)
@@ -343,7 +368,8 @@ fit_joinpoint_group(
   n_empirical_quantile_resamples,
   cache_empirical,
   grid_cache,
-  permutation_seed = NULL
+  permutation_seed = NULL,
+  covariance_rows = NULL
 )
 
 fit_candidate(
@@ -435,6 +461,8 @@ candidate_sse(candidate, response, data, weighted)
 
 candidate_sse_batch(candidate, response, data, weighted)
 
+grid_projection_minima(grid_solver, transformed_response)
+
 model_sse(model, data, weighted)
 
 integer_joinpoint_grid(time, n_joinpoints, min_points = 2L)
@@ -490,10 +518,13 @@ validate_plot_joinpoint_inputs(
   group_id,
   facet,
   scales,
+  ncol,
+  nrow,
   show_points,
   show_joinpoints,
   show_apc,
   show_aapc,
+  aapc_layout,
   aapc_range,
   ci_method,
   level,
@@ -503,7 +534,12 @@ validate_plot_joinpoint_inputs(
   p_digits,
   point_size,
   line_width,
-  text_size
+  text_size,
+  apc_text_size = text_size,
+  overlay_by = NULL,
+  font_family = "sans",
+  aapc_text_size = text_size,
+  aapc_text_color = "black"
 )
 
 joinpoint_plot_observations(models)
@@ -512,13 +548,37 @@ joinpoint_plot_segments(models)
 
 joinpoint_plot_apc_labels(x, models, options)
 
-joinpoint_plot_aapc_labels(models, options)
+joinpoint_plot_apc_label_angles(
+  labels,
+  plot_data,
+  facet_vars,
+  scales,
+  panel_aspect = 0.58
+)
+
+normalize_plot_aapc_ranges(aapc_range)
+
+resolve_plot_aapc_range(range, model)
+
+format_plot_aapc_caption(range, interval)
+
+joinpoint_plot_stack_aapc_labels(labels, facet_vars)
+
+joinpoint_plot_aapc_labels(models, options, facet_vars)
+
+joinpoint_plot_overlay_aapc_labels(labels, overlay_by, facet_vars, aapc_layout)
+
+format_joinpoint_group_label(data, overlay_by)
 
 joinpoint_plot_bind_rows(rows)
 
 format_joinpoint_estimate(x, digits)
 
+format_joinpoint_significance(x)
+
 format_joinpoint_p_value(x, digits)
+
+calc_binomial_outcome(data, count, population, group_vars, scale)
 
 validate_rate_data(data, measure_vars, group_vars, rate_per, positive_vars)
 

@@ -28,26 +28,34 @@ test_that("standardization requires complete ages and common normalized weights"
     standard_population = 50
   )
   expect_equal(
-    calc_age_adjusted_rate(d, group_vars = "year")$rate,
+    calc_asr(d, std = "standard_population", group_vars = "year")$rate,
     c(5500, 5500)
   )
   expect_snapshot(
     error = TRUE,
-    calc_age_adjusted_rate(d[-4, ], group_vars = "year")
+    calc_asr(d[-4, ], std = "standard_population", group_vars = "year")
   )
   expect_snapshot(
     error = TRUE,
-    calc_age_adjusted_rate(
+    calc_asr(
       d,
+      std = "standard_population",
       group_vars = "year",
       expected_ages = c("young", "old", "other")
     )
   )
   d$standard_population[4] <- 100
-  expect_snapshot(error = TRUE, calc_age_adjusted_rate(d, group_vars = "year"))
+  expect_snapshot(
+    error = TRUE,
+    calc_asr(d, std = "standard_population", group_vars = "year")
+  )
   d$standard_population[3] <- 100
   expect_equal(
-    calc_age_adjusted_rate(d[c(4, 3, 2, 1), ], group_vars = "year")$rate,
+    calc_asr(
+      d[c(4, 3, 2, 1), ],
+      std = "standard_population",
+      group_vars = "year"
+    )$rate,
     c(5500, 5500)
   )
 })
@@ -59,7 +67,7 @@ test_that("zero count groups do not interrupt positive groups", {
     count = c(rep(0, 6), 0, 2:6, 1:6),
     population = 1000
   )
-  rates <- calc_crude_rate(d, group_vars = c("year", "cohort"))
+  rates <- calc_cr(d, group_vars = c("year", "cohort"))
   fit <- joinpoint(
     rates,
     "year",

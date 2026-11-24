@@ -1,17 +1,23 @@
 Package: crtrend
-Title: Joinpoint Regression for Trend Analysis
+Title: Joinpoint Regression for Grouped Trend Analysis
 Version: 0.1.0.9000
 Authors@R:
     person("Qiong", "Chen", , "chenq08@126.com", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0003-2401-0046"))
-Description: Fit segmented joinpoint regression models to grouped time-series
-    data, with separate functions for annual percent change (APC) and
-    interval-specific average annual percent change (AAPC), including
-    confidence intervals.
+Description: Fits segmented log-linear regression models to grouped time-series
+    data and selects the number of joinpoints using permutation tests or
+    information-criterion methods. Supports independent and autoregressive
+    errors as well as user-supplied general or design-based covariance
+    matrices. Provides functions to calculate crude and directly
+    age-standardized rates, estimate annual percent change (APC) and
+    interval-specific average annual percent change (AAPC) with parametric or
+    empirical-quantile confidence intervals and p-values, extract model and
+    candidate-selection summaries, and visualize fitted trends.
 License: MIT + file LICENSE
 Depends:
     R (>= 4.4.0)
 Imports:
+    parallel,
     rlang,
     stats
 Suggests:

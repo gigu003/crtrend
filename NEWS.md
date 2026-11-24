@@ -1,5 +1,57 @@
 # crtrend 0.1.0.9000
 
+* `plot_joinpoint()` APC annotations now show only the formatted estimate and
+  significance stars, use the corresponding fitted-line colour, and gain an
+  `apc_text_size` argument for independent size control. Labels now rotate
+  parallel to their fitted segments on the plotted log scale.
+
+* `plot_joinpoint()` gains `ncol` and `nrow` to control the number of facet
+  columns or rows, respectively.
+
+* `plot_joinpoint()` gains `aapc_text_color` to set the AAPC-label colour;
+  it defaults to black when `overlay_by = NULL`.
+
+* `plot_joinpoint()` now appends significance stars directly to AAPC values:
+  one, two, and three stars indicate two-sided p-values below 0.05, 0.01, and
+  0.001. With `overlay_by`, each level uses its legend colour below a grey
+  `AAPC:` caption. New `aapc_layout` controls separated column or single-row
+  AAPC annotations, and `aapc_text_size` controls all AAPC-label text.
+  `aapc_range` now accepts multiple named or unnamed intervals and `"lastN"`
+  shortcuts, such as `list(c(1990L, 2023L), c(2014L, 2023L))` or
+  `list(overall = NULL, last10 = "last10")`.
+  Plot captions use the same grey and default to one point smaller than
+  `text_size`.
+
+* `plot_joinpoint()` improves spacing among axes, panels, legends, and
+  annotations, and adds `font_family` so axis text and in-panel APC/AAPC labels
+  consistently use the same selected font, including Chinese fonts.
+
+* `plot_joinpoint()` adds `overlay_by` to draw levels of one grouping variable
+  in the same panel with a colour legend, faceting only by the remaining
+  variables. Segments and APC labels use shades of each level's base colour;
+  joinpoint reference lines use the corresponding base colour. AAPC values for
+  overlay levels are combined in one compact annotation within each panel.
+  Without `overlay_by`, joinpoint lines remain light grey.
+
+* `plot_joinpoint()` now uses a logarithmic y-axis so fitted segments are
+  straight lines with slopes corresponding to APC, while tick labels remain in
+  the original outcome units.
+
+* `joinpoint()` now reuses precomputed hinge columns during grid search and
+  calculates full information-criterion scores only for the best model at each
+  joinpoint count. This reduces serial fitting time, including weighted and
+  correlated-error fits, without reducing the search grid or resampling counts.
+
+* `joinpoint()` can now fit independent groups in parallel with the
+  cross-platform `parallel`, `workers`, and reusable `cluster` arguments.
+  Parallel GLS and Survey fits now send only each group's covariance block to
+  workers, reducing transfer time and memory for data with many groups.
+
+* `joinpoint()` now caches each within-group whitening matrix and evaluates
+  empirical-quantile grid refits in matrix batches. This substantially reduces
+  fitting time for long series selecting several joinpoints without changing
+  model-selection or APC/AAPC calculations.
+
 * EQ inference now counts the original fitted estimate as the first of
   `n_eq` values, followed by `n_eq - 1` residual-resampled refits, matching
   Joinpoint 6.1.0's implementation. This resolves a one-count APC p-value
@@ -45,7 +97,7 @@
   as an explicitly documented fallback when a test is unavailable.
   Near-zero permutation SSEs are recomputed from explicit residuals.
 
-* `calc_age_adjusted_rate()` rejects incomplete age strata and inconsistent
+* `calc_asr()` rejects incomplete age strata and inconsistent
   normalized standard weights across groups. `expected_ages` can additionally
   detect age strata missing from all groups.
 * `calc_apc()` and `calc_aapc()` return an unavailable EQ p-value for all-zero
@@ -86,16 +138,19 @@
   `calc_model()` labels candidate scores with `weight_method`. Fitting, SSE,
   BIC/BIC3 and inference algorithms are unchanged; WBIC selection can change
   for nearly tied candidates. Invalid native projections fail explicitly.
-* `plot_joinpoint()` now draws each segment using a dense response-scale
-  prediction grid containing every observed time. This corrects the straight
-  endpoint chords previously drawn for log-linear models, preserves shared
-  joinpoint predictions, and leaves model fitting and APC/AAPC unchanged.
+* `plot_joinpoint()` evaluates each segment on a dense prediction grid
+  containing every observed time. It preserves fitted values at observed years
+  and shared joinpoint predictions without changing model fitting or APC/AAPC.
 * `joinpoint()` gains `eq_seed` for reproducible empirical-quantile APC/AAPC
   resampling independent of the model-selection `seed`; defaults are now
   `seed = 7160` and `eq_seed = 10000`, matching Joinpoint.
-* Added `calc_crude_rate()` and `calc_age_adjusted_rate()` for constructing
-  Joinpoint-ready rate and Poisson standard-error data from counts and
-  populations.
+* Added `calc_cr()` and `calc_asr()` for constructing Joinpoint-ready crude and
+  age-standardized rates with Poisson standard errors. `calc_asr()` uses `std`
+  for the standard-population column; the former function names remain
+  available as compatibility aliases.
+* Added `calc_prop()` and `calc_percent()` for constructing Joinpoint-ready
+  proportions and percentages with binomial standard errors from grouped
+  counts and populations.
 * Added four NCI Joinpoint 6.1.0 sample datasets: `jp_crude`,
   `jp_age_adjusted`, `jp_data`, and `jp_jump`, together with the original text
   input files under `inst/extdata/joinpoint-6.1.0`.

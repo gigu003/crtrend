@@ -90,6 +90,21 @@
 #'   Weight/WBIC scores, including those extracted by [calc_model()], not SSE,
 #'   BIC, BIC3, or the fitting/inference algorithms. It can change the selected
 #'   model when WBIC scores are close.
+#' @param parallel Logical. If `TRUE`, fit independent groups in parallel using
+#'   a cross-platform PSOCK cluster. Parallel execution is used only when there
+#'   is more than one group and more than one worker. The default is `FALSE`.
+#'   Explicit seeds give each parallel group a deterministic random stream;
+#'   methods that use R's random-number generator can therefore differ from the
+#'   serial stream while remaining reproducible across parallel runs.
+#' @param workers Number of parallel worker processes. `NULL` chooses up to one
+#'   fewer than the detected logical cores, capped by the number of groups.
+#'   `workers = 1` always uses the serial path. Ignored when `parallel = FALSE`
+#'   or when `cluster` is supplied. Each worker is a separate R process, so
+#'   parallel execution uses additional memory.
+#' @param cluster Optional cluster created by [parallel::makePSOCKcluster()].
+#'   When supplied, it is reused and is not stopped by `joinpoint()`. This is
+#'   useful for several consecutive grouped fits. `workers` is ignored when a
+#'   cluster is supplied.
 #'
 #' @return An object of class `crtrend_joinpoint`, a list with these elements:
 #'   \describe{
@@ -324,7 +339,10 @@ joinpoint <- function(
   perm_conf = 0.99,
   n_eq = 5001L,
   eq_seed = 10000L,
-  wbic_weight = c("qr", "joinpoint_6.1")
+  wbic_weight = c("qr", "joinpoint_6.1"),
+  parallel = FALSE,
+  workers = NULL,
+  cluster = NULL
 ) {
   options <- normalize_joinpoint_options(
     data = data,
@@ -350,7 +368,10 @@ joinpoint <- function(
     perm_conf = perm_conf,
     n_eq = n_eq,
     eq_seed = eq_seed,
-    wbic_weight = match.arg(wbic_weight)
+    wbic_weight = match.arg(wbic_weight),
+    parallel = parallel,
+    workers = workers,
+    cluster = cluster
   )
   analysis <- prepare_joinpoint_data(
     data = data,
@@ -361,19 +382,8 @@ joinpoint <- function(
   )
   fits <- with_joinpoint_seed(
     seed,
-    fit_joinpoint_groups(
-      analysis,
-      options,
-      cache_empirical = is.null(options$eq_seed)
-    )
+    fit_joinpoint_groups(analysis, options)
   )
-  if (!is.null(options$eq_seed)) {
-    fits <- cache_joinpoint_empirical_resamples(
-      fits,
-      options$n_empirical_quantile_resamples,
-      seed = options$eq_seed
-    )
-  }
   assemble_joinpoint_result(
     fits = fits,
     group_vars = options$group_vars,
@@ -415,7 +425,10 @@ normalize_joinpoint_options <- function(
   perm_conf,
   n_eq,
   eq_seed,
-  wbic_weight = "qr"
+  wbic_weight = "qr",
+  parallel = FALSE,
+  workers = NULL,
+  cluster = NULL
 ) {
   max_joinpoints <- max_jp
   min_joinpoints <- min_jp
@@ -440,6 +453,11 @@ normalize_joinpoint_options <- function(
   permutation_p1 <- perm_p1
   permutation_confidence_level <- perm_conf
   n_empirical_quantile_resamples <- n_eq
+  parallel <- joinpoint_parallel_flag(parallel)
+  cluster <- joinpoint_validate_cluster(cluster)
+  if (is.null(cluster)) {
+    joinpoint_worker_count(workers, n_groups = 2L, use_parallel = parallel)
+  }
   validate_joinpoint_inputs(
     data = data,
     time = time,
@@ -514,6 +532,9 @@ normalize_joinpoint_options <- function(
     n_empirical_quantile_resamples = as.integer(
       n_empirical_quantile_resamples
     ),
+    parallel = parallel,
+    workers = workers,
+    cluster = cluster,
     permutation_boundaries = make_permutation_boundaries(
       selection_method = selection_method,
       max_joinpoints = max_joinpoints,
@@ -638,13 +659,86 @@ prepare_joinpoint_data <- function(data, time, outcome, group_vars, std_error) {
 #'
 #' @rdname crtrend-internals
 #' @keywords internal
-fit_joinpoint_groups <- function(data, options, cache_empirical = TRUE) {
+fit_joinpoint_groups <- function(data, options) {
   attr(data, "crtrend_wbic_weight") <- options$wbic_weight %||% "qr"
   groups <- split_group_rows(data, options$group_vars)
+  n_workers <- if (is.null(options$cluster)) {
+    joinpoint_worker_count(options$workers, length(groups), options$parallel)
+  } else {
+    length(options$cluster)
+  }
+  if (!is.null(options$cluster) || n_workers > 1L) {
+    active_cluster <- options$cluster
+    if (is.null(active_cluster)) {
+      active_cluster <- parallel::makePSOCKcluster(n_workers)
+      on.exit(parallel::stopCluster(active_cluster), add = TRUE)
+    }
+    crtrend_initialize_cluster(active_cluster)
+    tasks <- Map(
+      function(group, seed) {
+        group_covariance <- if (
+          options$error_structure %in% c("GLS", "Survey")
+        ) {
+          rows <- group$trend_row_id
+          options$covariance[rows, rows, drop = FALSE]
+        } else {
+          NULL
+        }
+        list(
+          group = group,
+          seed = seed,
+          covariance = group_covariance,
+          covariance_rows = group$trend_row_id
+        )
+      },
+      groups,
+      sample.int(.Machine$integer.max, length(groups))
+    )
+    worker_options <- options
+    worker_options$cluster <- NULL
+    worker_options$covariance <- NULL
+    fits <- parallel::parLapplyLB(
+      active_cluster,
+      tasks,
+      crtrend_worker_invoke,
+      name = "fit_joinpoint_parallel_task",
+      options = worker_options
+    )
+    names(fits) <- names(groups)
+    return(fits)
+  }
+  lapply(groups, fit_joinpoint_group_task, options = options)
+}
+
+#' Internal helper: Run one parallel group with a scheduling-independent seed.
+#'
+#' @rdname crtrend-internals
+#' @keywords internal
+fit_joinpoint_parallel_task <- function(task, options) {
+  with_joinpoint_seed(
+    task$seed,
+    fit_joinpoint_group_task(
+      task$group,
+      options,
+      covariance = task$covariance,
+      covariance_rows = task$covariance_rows
+    )
+  )
+}
+
+#' Internal helper: Fit and cache one complete group task.
+#'
+#' @rdname crtrend-internals
+#' @keywords internal
+fit_joinpoint_group_task <- function(
+  group,
+  options,
+  covariance = options$covariance,
+  covariance_rows = NULL
+) {
   grid_cache <- new.env(parent = emptyenv())
-  lapply(
-    groups,
-    fit_joinpoint_group,
+  fit <- fit_joinpoint_group(
+    group,
     group_vars = options$group_vars,
     max_joinpoints = options$max_joinpoints,
     min_joinpoints = options$min_joinpoints,
@@ -652,7 +746,8 @@ fit_joinpoint_groups <- function(data, options, cache_empirical = TRUE) {
     weighted = options$weighted,
     error_structure = options$error_structure,
     rho = options$rho,
-    covariance = options$covariance,
+    covariance = covariance,
+    covariance_rows = covariance_rows,
     covariance_scale = options$covariance_scale,
     selection_method = options$selection_method,
     n_permutations = options$n_permutations,
@@ -665,9 +760,17 @@ fit_joinpoint_groups <- function(data, options, cache_empirical = TRUE) {
     permutation_confidence_level = options$permutation_confidence_level,
     permutation_seed = options$permutation_seed,
     n_empirical_quantile_resamples = options$n_empirical_quantile_resamples,
-    cache_empirical = cache_empirical,
+    cache_empirical = is.null(options$eq_seed),
     grid_cache = grid_cache
   )
+  if (!is.null(options$eq_seed)) {
+    fit <- cache_joinpoint_empirical_resamples(
+      list(fit),
+      options$n_empirical_quantile_resamples,
+      seed = options$eq_seed
+    )[[1L]]
+  }
+  fit
 }
 
 #' Internal helper: Cache empirical-quantile resamples after model fitting.
@@ -783,7 +886,13 @@ assemble_joinpoint_result <- function(
         perm_p1 = options$permutation_p1,
         perm_conf = options$permutation_confidence_level,
         n_eq = options$n_empirical_quantile_resamples,
-        eq_seed = options$eq_seed
+        eq_seed = options$eq_seed,
+        parallel = options$parallel,
+        workers = if (is.null(options$cluster)) {
+          options$workers
+        } else {
+          length(options$cluster)
+        }
       ),
       call = call
     ),
@@ -1135,11 +1244,15 @@ prepare_group_error_model <- function(
   error_structure,
   rho,
   covariance,
-  covariance_scale
+  covariance_scale,
+  covariance_rows = NULL
 ) {
   n <- nrow(data)
   if (error_structure %in% c("GLS", "Survey")) {
     row_id <- data$trend_row_id
+    if (!is.null(covariance_rows)) {
+      row_id <- match(row_id, covariance_rows)
+    }
     covariance <- covariance[row_id, row_id, drop = FALSE]
     if (covariance_scale == "outcome") {
       inverse_outcome <- 1 / data$trend_outcome
@@ -1172,6 +1285,7 @@ prepare_group_error_model <- function(
   attr(data, "crtrend_error") <- error_structure
   attr(data, "crtrend_known_covariance") <- error_structure %in%
     c("GLS", "Survey")
+  attr(data, "crtrend_whitener_cache") <- new.env(parent = emptyenv())
   data
 }
 
@@ -1196,8 +1310,17 @@ joinpoint_covariance <- function(data) {
 #' @rdname crtrend-internals
 #' @keywords internal
 joinpoint_whitener <- function(data) {
+  cache <- attr(data, "crtrend_whitener_cache", exact = TRUE)
+  key <- paste(data$trend_row_id, collapse = ",")
+  if (!is.null(cache) && exists(key, envir = cache, inherits = FALSE)) {
+    return(get(key, envir = cache, inherits = FALSE))
+  }
   factorization <- chol(joinpoint_covariance(data))
-  forwardsolve(t(factorization), diag(nrow(data)))
+  result <- forwardsolve(t(factorization), diag(nrow(data)))
+  if (!is.null(cache)) {
+    assign(key, result, envir = cache)
+  }
+  result
 }
 
 #' Internal helper: Transform values to independent unit-variance coordinates.
@@ -1254,7 +1377,8 @@ fit_joinpoint_group <- function(
   n_empirical_quantile_resamples,
   cache_empirical,
   grid_cache,
-  permutation_seed = NULL
+  permutation_seed = NULL,
+  covariance_rows = NULL
 ) {
   group <- group[order(group$trend_time), , drop = FALSE]
   group_key <- group[1L, group_vars, drop = FALSE]
@@ -1297,7 +1421,8 @@ fit_joinpoint_group <- function(
     error_structure = error_structure,
     rho = rho,
     covariance = covariance,
-    covariance_scale = covariance_scale
+    covariance_scale = covariance_scale,
+    covariance_rows = covariance_rows
   )
   group$trend_log <- log(group$trend_outcome)
   candidates <- lapply(
@@ -1447,19 +1572,7 @@ fit_candidate <- function(
     }
   }
   if (n_joinpoints > 0L) {
-    scores <- lapply(
-      candidate_joinpoints,
-      fixed_joinpoint_scores,
-      data = data,
-      weighted = weighted,
-      calculate_partial = FALSE
-    )
-    criterion <- vapply(
-      scores,
-      `[[`,
-      numeric(1),
-      "sse"
-    )
+    criterion <- joinpoint_grid_sse(candidate_joinpoints, data)
     best_index <- if (all(!is.finite(criterion))) {
       1L
     } else {
@@ -2508,6 +2621,15 @@ candidate_sse_batch <- function(candidate, response, data, weighted) {
     ))
   }
   transformed_response <- joinpoint_whiten(data, response)
+  grid_projection_minima(grid_solver, transformed_response)$sse
+}
+
+#' Internal helper: Find the minimum SSE projection for response columns.
+#'
+#' @rdname crtrend-internals
+#' @keywords internal
+grid_projection_minima <- function(grid_solver, transformed_response) {
+  transformed_response <- as.matrix(transformed_response)
   projected <- crossprod(grid_solver$basis, transformed_response)
   projection_squares <- colSums(matrix(
     projected^2,
@@ -2516,7 +2638,7 @@ candidate_sse_batch <- function(candidate, response, data, weighted) {
   projection_squares <- matrix(
     projection_squares,
     nrow = grid_solver$n_models,
-    ncol = ncol(response)
+    ncol = ncol(transformed_response)
   )
   residual_sum_squares <- rep(
     colSums(transformed_response^2),
@@ -2526,7 +2648,7 @@ candidate_sse_batch <- function(candidate, response, data, weighted) {
   residual_sum_squares <- matrix(
     residual_sum_squares,
     nrow = grid_solver$n_models,
-    ncol = ncol(response)
+    ncol = ncol(transformed_response)
   )
   threshold <- 64 * .Machine$double.eps * colSums(transformed_response^2)
   unstable <- which(
@@ -2546,9 +2668,20 @@ candidate_sse_batch <- function(candidate, response, data, weighted) {
     residual_sum_squares[model_index, response_index] <- sum(residual^2)
   }
   if (grid_solver$n_models == 1L) {
-    return(as.numeric(residual_sum_squares))
+    return(list(
+      sse = as.numeric(residual_sum_squares),
+      model_index = rep.int(1L, ncol(transformed_response))
+    ))
   }
-  apply(residual_sum_squares, 2L, min)
+  finite_sse <- residual_sum_squares
+  finite_sse[!is.finite(finite_sse)] <- Inf
+  model_index <- max.col(t(-finite_sse), ties.method = "first")
+  column_index <- seq_len(ncol(transformed_response))
+  minimum_sse <- residual_sum_squares[cbind(model_index, column_index)]
+  invalid <- !is.finite(finite_sse[cbind(model_index, column_index)])
+  minimum_sse[invalid] <- NA_real_
+  model_index[invalid] <- NA_integer_
+  list(sse = minimum_sse, model_index = model_index)
 }
 
 #' Internal helper: Calculate the weighted or unweighted model SSE.
@@ -2849,20 +2982,44 @@ invalid_joinpoint_scores <- function(sse = Inf) {
 #' @rdname crtrend-internals
 #' @keywords internal
 joinpoint_design <- function(joinpoints, data) {
-  hinge_names <- if (length(joinpoints) > 0L) {
-    paste0("joinpoint_", seq_along(joinpoints))
-  } else {
-    character()
+  design <- cbind(`(Intercept)` = 1, trend_time = data$trend_time)
+  if (length(joinpoints) > 0L) {
+    hinges <- outer(data$trend_time, joinpoints, `-`)
+    hinges[hinges < 0] <- 0
+    colnames(hinges) <- paste0("joinpoint_", seq_along(joinpoints))
+    design <- cbind(design, hinges)
   }
-  model_data <- data
-  for (i in seq_along(joinpoints)) {
-    model_data[[hinge_names[i]]] <- pmax(
-      model_data$trend_time - joinpoints[i],
-      0
-    )
-  }
-  design <- as.matrix(model_data[c("trend_time", hinge_names)])
-  cbind(`(Intercept)` = 1, design)
+  design
+}
+
+# Whiten each possible hinge once; every grid model selects a few columns.
+joinpoint_grid_design <- function(grid, data) {
+  knots <- sort(unique(unlist(grid, use.names = FALSE)))
+  design <- joinpoint_whiten(data, joinpoint_design(knots, data))
+  list(
+    design = design,
+    columns = lapply(grid, function(points) {
+      c(1L, 2L, match(points, knots) + 2L)
+    })
+  )
+}
+
+joinpoint_grid_sse <- function(grid, data) {
+  prepared <- joinpoint_grid_design(grid, data)
+  response <- as.numeric(joinpoint_whiten(data, data$trend_log))
+  vapply(
+    prepared$columns,
+    function(columns) {
+      design <- prepared$design[, columns, drop = FALSE]
+      fit <- stats::.lm.fit(design, response)
+      if (fit$rank < ncol(design) || any(!is.finite(fit$coefficients))) {
+        return(Inf)
+      }
+      sse <- sum(fit$residuals^2)
+      if (is.finite(sse)) sse else Inf
+    },
+    numeric(1)
+  )
 }
 
 #' Internal helper: Calculate the maximum adjacent partial R-squared.
@@ -3054,11 +3211,9 @@ compile_joinpoint_grid_solver <- function(grid_joinpoints, data, weighted) {
     return(NULL)
   }
   n_coefficients <- length(grid_joinpoints[[1L]]) + 2L
-  bases <- lapply(grid_joinpoints, function(joinpoints) {
-    transformed_design <- joinpoint_whiten(
-      data,
-      joinpoint_design(joinpoints, data)
-    )
+  prepared <- joinpoint_grid_design(grid_joinpoints, data)
+  bases <- lapply(prepared$columns, function(columns) {
+    transformed_design <- prepared$design[, columns, drop = FALSE]
     factorization <- qr(transformed_design)
     if (factorization$rank < ncol(transformed_design)) {
       return(NULL)
@@ -3068,14 +3223,16 @@ compile_joinpoint_grid_solver <- function(grid_joinpoints, data, weighted) {
       drop = FALSE
     ]
   })
-  bases <- Filter(Negate(is.null), bases)
+  valid <- !vapply(bases, is.null, logical(1))
+  bases <- bases[valid]
   if (length(bases) == 0L) {
     return(NULL)
   }
   list(
     basis = do.call(cbind, bases),
     n_coefficients = n_coefficients,
-    n_models = length(bases)
+    n_models = length(bases),
+    model_indices = which(valid)
   )
 }
 

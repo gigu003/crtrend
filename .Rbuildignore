@@ -1,6 +1,7 @@
 ^\.git$
 ^\.github$
 ^\.Rproj\.user$
+^\.venv$
 ^crtrend\.Rproj$
 ^README\.Rmd$
 ^README-cache$

@@ -88,7 +88,10 @@ joinpoint(
   perm_conf = 0.99,
   n_eq = 5001L,
   eq_seed = 10000L,
-  wbic_weight = c("qr", "joinpoint_6.1")
+  wbic_weight = c("qr", "joinpoint_6.1"),
+  parallel = FALSE,
+  workers = NULL,
+  cluster = NULL
 )
 }
 \arguments{
@@ -211,6 +214,24 @@ requires \code{error = "Ind"} and an input \code{se} column. It affects candidat
 Weight/WBIC scores, including those extracted by \code{\link[=calc_model]{calc_model()}}, not SSE,
 BIC, BIC3, or the fitting/inference algorithms. It can change the selected
 model when WBIC scores are close.}
+
+\item{parallel}{Logical. If \code{TRUE}, fit independent groups in parallel using
+a cross-platform PSOCK cluster. Parallel execution is used only when there
+is more than one group and more than one worker. The default is \code{FALSE}.
+Explicit seeds give each parallel group a deterministic random stream;
+methods that use R's random-number generator can therefore differ from the
+serial stream while remaining reproducible across parallel runs.}
+
+\item{workers}{Number of parallel worker processes. \code{NULL} chooses up to one
+fewer than the detected logical cores, capped by the number of groups.
+\code{workers = 1} always uses the serial path. Ignored when \code{parallel = FALSE}
+or when \code{cluster} is supplied. Each worker is a separate R process, so
+parallel execution uses additional memory.}
+
+\item{cluster}{Optional cluster created by \code{\link[parallel:makePSOCKcluster]{parallel::makePSOCKcluster()}}.
+When supplied, it is reused and is not stopped by \code{joinpoint()}. This is
+useful for several consecutive grouped fits. \code{workers} is ignored when a
+cluster is supplied.}
 }
 \value{
 \code{coef()} returns a tidy coefficient data frame. \code{fitted()},

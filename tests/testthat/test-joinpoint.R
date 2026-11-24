@@ -240,7 +240,9 @@ test_that("joinpoint follows standard grouped model-object conventions", {
       "perm_p1",
       "perm_conf",
       "n_eq",
-      "eq_seed"
+      "eq_seed",
+      "parallel",
+      "workers"
     )
   )
   expect_named(
@@ -252,6 +254,91 @@ test_that("joinpoint follows standard grouped model-object conventions", {
     c("group_id", "sex", "index", "joinpoint")
   )
   expect_equal("joinpoints" %in% names(result$model_info), FALSE)
+})
+
+test_that("parallel grouped fits match serial grouped fits", {
+  skip_on_cran()
+  data <- subset(jp_data, sex %in% c(0, 1))
+  args <- list(
+    data = data,
+    time = "year",
+    outcome = "rate",
+    group_vars = "sex",
+    max_jp = 1,
+    selection_method = "BIC",
+    n_eq = 9L
+  )
+
+  serial <- do.call(joinpoint, args)
+  parallel <- do.call(
+    joinpoint,
+    c(args, list(parallel = TRUE, workers = 2L))
+  )
+
+  expect_identical(fitted(parallel), fitted(serial))
+  expect_identical(parallel$model_info, serial$model_info)
+  expect_identical(parallel$joinpoints, serial$joinpoints)
+  expect_identical(parallel$segments, serial$segments)
+  expect_identical(
+    lapply(parallel$models, function(model) model$resamples$draws),
+    lapply(serial$models, function(model) model$resamples$draws)
+  )
+  expect_identical(parallel$control$parallel, TRUE)
+  expect_identical(parallel$control$workers, 2L)
+})
+
+test_that("parallel settings validate and one worker uses serial results", {
+  data <- subset(jp_data, sex %in% c(0, 1))
+  args <- list(
+    data = data,
+    time = "year",
+    outcome = "rate",
+    group_vars = "sex",
+    max_jp = 0,
+    n_eq = 3L
+  )
+  serial <- do.call(joinpoint, args)
+  one_worker <- do.call(
+    joinpoint,
+    c(args, list(parallel = TRUE, workers = 1L))
+  )
+
+  expect_identical(fitted(one_worker), fitted(serial))
+  expect_snapshot(
+    error = TRUE,
+    do.call(joinpoint, c(args, list(parallel = NA)))
+  )
+  expect_snapshot(
+    error = TRUE,
+    do.call(joinpoint, c(args, list(parallel = TRUE, workers = 0)))
+  )
+  expect_snapshot(error = TRUE, do.call(joinpoint, c(args, list(cluster = 2))))
+})
+
+test_that("joinpoint can reuse an external parallel cluster", {
+  skip_on_cran()
+  data <- subset(jp_data, sex %in% c(0, 1))
+  cluster <- parallel::makePSOCKcluster(2L)
+  on.exit(parallel::stopCluster(cluster), add = TRUE)
+  args <- list(
+    data = data,
+    time = "year",
+    outcome = "rate",
+    group_vars = "sex",
+    max_jp = 0,
+    n_eq = 3L
+  )
+
+  serial <- do.call(joinpoint, args)
+  first <- do.call(joinpoint, c(args, list(cluster = cluster)))
+  second <- do.call(
+    joinpoint,
+    c(args, list(cluster = cluster, workers = 0))
+  )
+
+  expect_identical(fitted(first), fitted(serial))
+  expect_identical(fitted(second), fitted(serial))
+  expect_identical(first$control$workers, 2L)
 })
 
 test_that("joinpoint normalizes data-frame subclasses before setting row names", {

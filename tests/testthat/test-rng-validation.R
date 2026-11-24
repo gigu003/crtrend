@@ -129,6 +129,32 @@ test_that("fitting errors restore caller RNG", {
   expect_identical(.Random.seed, before)
 })
 
+test_that("seeded parallel tSPRT fits are reproducible and restore RNG", {
+  skip_on_cran()
+  d <- subset(jp_data, sex %in% c(0, 1))
+  args <- list(
+    data = d,
+    time = "year",
+    outcome = "rate",
+    group_vars = "sex",
+    max_jp = 1,
+    selection_method = "Perm",
+    perm_method = "tsprt",
+    n_perm = 19,
+    n_eq = 3,
+    parallel = TRUE,
+    workers = 2
+  )
+  set.seed(73)
+  before <- .Random.seed
+  first <- do.call(joinpoint, args)
+  expect_identical(.Random.seed, before)
+  second <- do.call(joinpoint, args)
+  expect_identical(.Random.seed, before)
+  expect_identical(first$model_info, second$model_info)
+  expect_identical(first$selection_tests, second$selection_tests)
+})
+
 test_that("real controls reject non-finite and non-scalar input", {
   d <- subset(jp_data, sex == 0)
   expect_snapshot({

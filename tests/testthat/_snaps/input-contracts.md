@@ -9,7 +9,7 @@
 # standardization requires complete ages and common normalized weights
 
     Code
-      calc_age_adjusted_rate(d[-4, ], group_vars = "year")
+      calc_asr(d[-4, ], std = "standard_population", group_vars = "year")
     Condition
       Error:
       ! Every group must contain exactly the expected age strata.
@@ -17,8 +17,8 @@
 ---
 
     Code
-      calc_age_adjusted_rate(d, group_vars = "year", expected_ages = c("young", "old",
-        "other"))
+      calc_asr(d, std = "standard_population", group_vars = "year", expected_ages = c(
+        "young", "old", "other"))
     Condition
       Error:
       ! Every group must contain exactly the expected age strata.
@@ -26,7 +26,7 @@
 ---
 
     Code
-      calc_age_adjusted_rate(d, group_vars = "year")
+      calc_asr(d, std = "standard_population", group_vars = "year")
     Condition
       Error:
       ! Standard-population weights must be identical across groups.

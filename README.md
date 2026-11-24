@@ -31,6 +31,12 @@ Seeds must be finite integers in `[-2147483647, 2147483647]`; count controls
 must be representable integers no larger than `2147483646`, in addition to
 their documented lower bounds. These bounds are not a promise that extremely
 large grid searches or resample counts are computationally feasible.
+Grid search precomputes the whitened time and hinge columns, evaluates residual
+sums of squares for each candidate, and calculates the full selection scores
+for the best model at each joinpoint count. This optimization applies to serial
+and parallel fitting and preserves the complete search grid and requested
+resampling counts. A local before/after benchmark for `risk_inci.rds` is provided
+in `data-raw/joinpoint-performance.R`.
 For permutation-selected models, `model_info` includes the explicit
 `mc_p_value`, its Monte Carlo interval (`mc_p_value_lower` and
 `mc_p_value_upper`), and the actual number of resamples (`mc_n_permutations`);
@@ -64,9 +70,23 @@ model$selection_tests # permutation comparison details, if used
 model$joinpoints    # locations only; no joinpoint confidence intervals
 ```
 
-`plot_joinpoint(fit)` draws response-scale prediction curves using a dense grid
-plus every observed time, preserving fitted values at observed years and shared
-joinpoint endpoints. It does not refit the model or change APC/AAPC inference.
+`plot_joinpoint(fit)` uses a logarithmic y-axis, so each fitted segment is a
+straight line whose slope corresponds to its APC; tick labels remain in the
+original outcome units. A dense grid plus every observed time preserves fitted
+values at observed years and shared joinpoint endpoints. Plotting does not refit
+the model or change APC/AAPC inference.
+
+Use `overlay_by` to compare levels of a grouping variable in the same panel:
+
+```r
+plot_joinpoint(fit, overlay_by = "sex", show_apc = TRUE)
+```
+
+For a fit grouped by `c("sex", "cancer")`, this gives each sex a colour family,
+uses progressively darker shades for segment lines and APC labels, and facets
+only by cancer. Joinpoint reference lines use the corresponding sex colour. The
+default `overlay_by = NULL` retains the original separate panels and segment
+colours, with light-grey joinpoint lines.
 
 `ci_method` controls the yearly APC significance flags (default `"EQ"`);
 coefficient inference is always parametric. Candidate summaries are retained
@@ -79,12 +99,13 @@ age-standardized rates. Both functions return `rate` and its Poisson `se`:
 
 ```r
 data(jp_crude)
-crude <- calc_crude_rate(jp_crude)
+crude <- calc_cr(jp_crude)
 
 data(jp_age_adjusted)
-age_adjusted <- calc_age_adjusted_rate(
+age_adjusted <- calc_asr(
   jp_age_adjusted,
-  age = "age_group"
+  age = "age_group",
+  std = "standard_population"
 )
 
 fit <- crtrend::joinpoint(
@@ -99,6 +120,15 @@ fit <- crtrend::joinpoint(
 By default, all columns other than the measure columns are used as grouping
 variables. Use `group_vars` to choose a different aggregation level and
 `rate_per` to change the rate multiplier.
+
+Binomial proportions and percentages can be prepared with the same
+`count`/`population` convention. Their returned `se` is on the corresponding
+outcome scale:
+
+```r
+prop <- calc_prop(data, count = "count", population = "population")
+percent <- calc_percent(data, count = "count", population = "population")
+```
 
 `calc_aapc()` follows Clegg et al. (2009): segment log-slopes are weighted by
 their overlap durations, and the returned `aapc_se`, confidence interval, and

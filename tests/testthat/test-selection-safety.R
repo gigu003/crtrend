@@ -47,6 +47,59 @@ test_that("scalar and batch grid SSE retain near-zero residuals", {
   }
 })
 
+test_that("batched grid projections preserve explicit QR minima", {
+  data <- data.frame(
+    trend_time = 2000:2011,
+    trend_outcome = exp(
+      seq(-2, -1.5, length.out = 12) + sin(seq_len(12)) / 100
+    ),
+    trend_se = rep(0.01, 12),
+    trend_row_id = seq_len(12)
+  )
+  data <- prepare_group_error_model(data, "Ind", 0, NULL, "outcome")
+  data$trend_log <- log(data$trend_outcome)
+  grid <- integer_joinpoint_grid(data$trend_time, 2L)
+  solver <- compile_joinpoint_grid_solver(grid, data, TRUE)
+  responses <- cbind(
+    data$trend_log,
+    data$trend_log + sin(seq_len(nrow(data))) / 100
+  )
+  transformed <- joinpoint_whiten(data, responses)
+  actual <- grid_projection_minima(solver, transformed)
+  reference <- vapply(
+    grid,
+    function(joinpoints) {
+      design <- joinpoint_whiten(data, joinpoint_design(joinpoints, data))
+      fit <- qr(design)
+      colSums((transformed - qr.fitted(fit, transformed))^2)
+    },
+    numeric(ncol(transformed))
+  )
+  reference <- t(reference)
+  expected_index <- apply(reference, 2L, which.min)
+
+  expect_equal(actual$sse, reference[cbind(expected_index, 1:2)])
+  expect_equal(solver$model_indices[actual$model_index], expected_index)
+})
+
+test_that("within-group whitening matrices are cached by row subset", {
+  data <- data.frame(
+    trend_time = 2000:2005,
+    trend_outcome = exp(seq(-2, -1.8, length.out = 6)),
+    trend_se = rep(0.01, 6),
+    trend_row_id = seq_len(6)
+  )
+  data <- prepare_group_error_model(data, "Ind", 0, NULL, "outcome")
+  cache <- attr(data, "crtrend_whitener_cache", exact = TRUE)
+
+  expect_length(ls(cache), 0L)
+  full <- joinpoint_whitener(data)
+  expect_length(ls(cache), 1L)
+  expect_identical(joinpoint_whitener(data), full)
+  joinpoint_whitener(data[1:4, , drop = FALSE])
+  expect_length(ls(cache), 2L)
+})
+
 test_that("invalid resamples abort both permutation modes without discarding draws", {
   d <- data.frame(trend_time = 1:12, trend_log = sin(1:12))
   reduced <- fit_candidate(0L, d, FALSE, 2L, "permutation")

@@ -1,9 +1,10 @@
 #' Calculate crude rates from counts and populations
 #'
-#' `calc_crude_rate()` aggregates counts and populations within each requested
+#' `calc_cr()` aggregates counts and populations within each requested
 #' group and calculates a rate on the requested scale. The returned `se` is the
 #' Poisson standard error on the same rate scale, so the result can be passed
 #' directly to [joinpoint()] with `outcome = "rate"` and `se = "se"`.
+#' `calc_crude_rate()` is retained as a compatibility alias.
 #'
 #' @param data A data frame containing counts, populations, and optional
 #'   grouping variables.
@@ -25,7 +26,7 @@
 #'
 #' @examples
 #' data(jp_crude)
-#' crude <- calc_crude_rate(
+#' crude <- calc_cr(
 #'   jp_crude,
 #'   count = "count",
 #'   population = "population",
@@ -41,9 +42,9 @@
 #'   max_jp = 1
 #' )
 #'
-#' @seealso [calc_age_adjusted_rate()], [joinpoint()]
+#' @seealso [calc_asr()], [calc_prop()], [calc_percent()], [joinpoint()]
 #' @export
-calc_crude_rate <- function(
+calc_cr <- function(
   data,
   count = "count",
   population = "population",
@@ -74,14 +75,33 @@ calc_crude_rate <- function(
   result
 }
 
+#' @rdname calc_cr
+#' @export
+calc_crude_rate <- function(
+  data,
+  count = "count",
+  population = "population",
+  group_vars = NULL,
+  rate_per = 100000
+) {
+  calc_cr(
+    data = data,
+    count = count,
+    population = population,
+    group_vars = group_vars,
+    rate_per = rate_per
+  )
+}
+
 #' Calculate directly age-standardized rates from age-specific counts
 #' and populations
 #'
-#' `calc_age_adjusted_rate()` performs direct age standardization within each
+#' `calc_asr()` performs direct age standardization within each
 #' requested group. It uses the supplied standard-population counts as weights
 #' and returns a Poisson/delta-method standard error on the same rate scale.
 #' The result can be passed directly to [joinpoint()] with
 #' `outcome = "rate"` and `se = "se"`.
+#' `calc_age_adjusted_rate()` is retained as a compatibility alias.
 #'
 #' @param data A data frame containing one row per group and age stratum.
 #' @param count Name of the age-specific count column.
@@ -91,10 +111,10 @@ calc_crude_rate <- function(
 #'   uses the union of observed ages. Supply this explicitly to detect ages
 #'   missing from every group. Restricted-age rates require explicitly
 #'   subsetting all groups to the same age range.
-#' @param standard_population Name of the standard-population count column.
+#' @param std Name of the standard-population count column.
 #' @param group_vars Optional character vector of grouping-variable names. If
 #'   `NULL`, all columns other than `count`, `population`, `age`, and
-#'   `standard_population` are used.
+#'   the column selected by `std` are used.
 #' @param rate_per Positive rate multiplier. The default, `100000`, returns
 #'   rates per 100,000 people.
 #'
@@ -104,7 +124,7 @@ calc_crude_rate <- function(
 #' @details
 #' Within each group, the age-specific rates are combined as
 #' `sum(w_i * count_i / population_i) * rate_per`, where
-#' `w_i = standard_population_i / sum(standard_population_i)`. The returned
+#' `w_i = std_i / sum(std_i)`. The returned
 #' standard error is
 #' `sqrt(sum(w_i^2 * count_i / population_i^2)) * rate_per`, the usual
 #' independent-Poisson approximation for direct standardization. Each
@@ -117,12 +137,12 @@ calc_crude_rate <- function(
 #'
 #' @examples
 #' data(jp_age_adjusted)
-#' age_adjusted <- calc_age_adjusted_rate(
+#' age_adjusted <- calc_asr(
 #'   jp_age_adjusted,
 #'   count = "count",
 #'   population = "population",
 #'   age = "age_group",
-#'   standard_population = "standard_population",
+#'   std = "standard_population",
 #'   group_vars = c("sex", "year")
 #' )
 #'
@@ -135,14 +155,14 @@ calc_crude_rate <- function(
 #'   max_jp = 1
 #' )
 #'
-#' @seealso [calc_crude_rate()], [joinpoint()]
+#' @seealso [calc_cr()], [calc_prop()], [calc_percent()], [joinpoint()]
 #' @export
-calc_age_adjusted_rate <- function(
+calc_asr <- function(
   data,
   count = "count",
   population = "population",
   age = "age",
-  standard_population = "standard_population",
+  std = "std",
   group_vars = NULL,
   rate_per = 100000,
   expected_ages = NULL
@@ -156,17 +176,17 @@ calc_age_adjusted_rate <- function(
     stop("`age` must be one column name.", call. = FALSE)
   }
   if (
-    !is.character(standard_population) ||
-      length(standard_population) != 1L ||
-      is.na(standard_population) ||
-      !nzchar(standard_population)
+    !is.character(std) ||
+      length(std) != 1L ||
+      is.na(std) ||
+      !nzchar(std)
   ) {
-    stop("`standard_population` must be one column name.", call. = FALSE)
+    stop("`std` must be one column name.", call. = FALSE)
   }
   if (!is.data.frame(data) || !age %in% names(data)) {
     stop("Missing age column: `", age, "`.", call. = FALSE)
   }
-  measure_vars <- c(count, population, standard_population)
+  measure_vars <- c(count, population, std)
   if (is.null(group_vars)) {
     group_vars <- setdiff(names(data), c(measure_vars, age))
   }
@@ -192,7 +212,7 @@ calc_age_adjusted_rate <- function(
     data,
     groups,
     age,
-    standard_population,
+    std,
     expected_ages
   )
   counts <- vapply(groups, function(i) sum(data[[count]][i]), numeric(1))
@@ -204,7 +224,7 @@ calc_age_adjusted_rate <- function(
   rates <- vapply(
     groups,
     function(i) {
-      weights <- data[[standard_population]][i]
+      weights <- data[[std]][i]
       weight_total <- sum(weights)
       if (weight_total <= 0) {
         stop(
@@ -221,7 +241,7 @@ calc_age_adjusted_rate <- function(
   standard_errors <- vapply(
     groups,
     function(i) {
-      weights <- data[[standard_population]][i]
+      weights <- data[[std]][i]
       weight_total <- sum(weights)
       if (weight_total <= 0) {
         stop(
@@ -241,6 +261,163 @@ calc_age_adjusted_rate <- function(
   result$rate <- rates
   result$se <- standard_errors
   rownames(result) <- NULL
+  result
+}
+
+#' @rdname calc_asr
+#' @export
+calc_age_adjusted_rate <- function(
+  data,
+  count = "count",
+  population = "population",
+  age = "age",
+  std = "std",
+  group_vars = NULL,
+  rate_per = 100000,
+  expected_ages = NULL
+) {
+  calc_asr(
+    data = data,
+    count = count,
+    population = population,
+    age = age,
+    std = std,
+    group_vars = group_vars,
+    rate_per = rate_per,
+    expected_ages = expected_ages
+  )
+}
+
+#' Calculate proportions or percentages from counts and populations
+#'
+#' `calc_prop()` and `calc_percent()` aggregate counts and populations within
+#' each requested group and calculate a binomial proportion or percentage.
+#' The returned `se` is on the same scale as the returned outcome, so the
+#' result can be passed directly to [joinpoint()].
+#'
+#' @param data A data frame containing counts, populations, and optional
+#'   grouping variables.
+#' @param count Name of the count column.
+#' @param population Name of the population or denominator column.
+#' @param group_vars Optional character vector of grouping-variable names. If
+#'   `NULL`, all columns other than `count` and `population` are used.
+#'
+#' @return `calc_prop()` returns the grouping columns, aggregated `count` and
+#'   `population`, `prop`, and its binomial `se`. `calc_percent()` returns the
+#'   same columns with `percent` replacing `prop`; its `se` is on the percentage
+#'   scale.
+#'
+#' @details
+#' For an aggregated count `C` and population `N`, `calc_prop()` returns
+#' `p = C / N` and `sqrt(p * (1 - p) / N)`. `calc_percent()` multiplies both
+#' quantities by 100. The normal approximation used by Joinpoint may be
+#' unreliable when `C < 10` or `N - C < 10`; these functions issue a warning
+#' when either condition occurs. For complex-survey estimates, calculate a
+#' design-based standard error or covariance matrix externally instead.
+#'
+#' Boundary values zero and one are valid proportions and have a binomial
+#' standard error of zero. They are returned without adjustment, but they are
+#' not directly compatible with every log-linear [joinpoint()] analysis.
+#'
+#' @examples
+#' d <- data.frame(
+#'   year = 2020:2023,
+#'   count = c(40, 44, 51, 57),
+#'   population = c(100, 102, 105, 108)
+#' )
+#' proportions <- calc_prop(d)
+#' percentages <- calc_percent(d)
+#'
+#' joinpoint(
+#'   proportions,
+#'   time = "year",
+#'   outcome = "prop",
+#'   se = "se",
+#'   max_jp = 0
+#' )
+#'
+#' @seealso [calc_cr()], [calc_asr()], [joinpoint()]
+#' @export
+calc_prop <- function(
+  data,
+  count = "count",
+  population = "population",
+  group_vars = NULL
+) {
+  calc_binomial_outcome(
+    data = data,
+    count = count,
+    population = population,
+    group_vars = group_vars,
+    scale = "prop"
+  )
+}
+
+#' @rdname calc_prop
+#' @export
+calc_percent <- function(
+  data,
+  count = "count",
+  population = "population",
+  group_vars = NULL
+) {
+  calc_binomial_outcome(
+    data = data,
+    count = count,
+    population = population,
+    group_vars = group_vars,
+    scale = "percent"
+  )
+}
+
+#' Internal helper: Calculate a grouped binomial outcome.
+#'
+#' @rdname crtrend-internals
+#' @keywords internal
+calc_binomial_outcome <- function(
+  data,
+  count,
+  population,
+  group_vars,
+  scale
+) {
+  validated <- validate_rate_data(
+    data = data,
+    measure_vars = c(count, population),
+    group_vars = group_vars,
+    rate_per = 1,
+    positive_vars = population
+  )
+  data <- validated$data
+  if (any(data[[count]] > data[[population]])) {
+    stop("`count` must not exceed `population`.", call. = FALSE)
+  }
+  groups <- rate_group_rows(data, validated$group_vars)
+  counts <- vapply(groups, function(i) sum(data[[count]][i]), numeric(1))
+  populations <- vapply(
+    groups,
+    function(i) sum(data[[population]][i]),
+    numeric(1)
+  )
+  prop <- counts / populations
+  standard_errors <- sqrt(prop * (1 - prop) / populations)
+  multiplier <- if (scale == "percent") 100 else 1
+  outcome_name <- if (scale == "percent") "percent" else "prop"
+  result <- rate_result_frame(data, validated$group_vars, groups)
+  result$count <- counts
+  result$population <- populations
+  result[[outcome_name]] <- multiplier * prop
+  result$se <- multiplier * standard_errors
+  rownames(result) <- NULL
+  small <- counts < 10 | populations - counts < 10
+  if (any(small)) {
+    warning(
+      "Normal-approximation standard errors may be unreliable for ",
+      sum(small),
+      " group(s) with `count < 10` or `population - count < 10`.",
+      call. = FALSE
+    )
+  }
   result
 }
 
@@ -286,9 +463,16 @@ validate_rate_data <- function(
       )
     }
   }
-  if (any(group_vars %in% c("count", "population", "rate", "se"))) {
+  if (
+    any(
+      group_vars %in% c("count", "population", "rate", "prop", "percent", "se")
+    )
+  ) {
     stop(
-      "Grouping columns cannot be named `count`, `population`, `rate`, or `se`.",
+      paste0(
+        "Grouping columns cannot be named `count`, `population`, `rate`, ",
+        "`prop`, `percent`, or `se`."
+      ),
       call. = FALSE
     )
   }

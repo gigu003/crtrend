@@ -12,8 +12,11 @@ make_case <- function(first_change, second_change) {
   data.frame(
     year = time,
     rate = exp(
-      4 - .02 * time + first_change * pmax(time - 10, 0) +
-        second_change * pmax(time - 22, 0) + .01 * sin(2 * time)
+      4 -
+        .02 * time +
+        first_change * pmax(time - 10, 0) +
+        second_change * pmax(time - 22, 0) +
+        .01 * sin(2 * time)
     )
   )
 }
@@ -43,27 +46,30 @@ results <- lapply(cases, function(data) {
   output <- calc_model(fit, ci_method = "Param")
   list(fit = fit, output = output)
 })
-summary <- do.call(rbind, lapply(names(results), function(case) {
-  fit <- results[[case]]$fit
-  output <- results[[case]]$output
-  data.frame(
-    case = case,
-    bic_minimizer_k = output$candidates$n_joinpoints[
-      which.min(output$candidates$bic)
-    ],
-    bic3_minimizer_k = output$candidates$n_joinpoints[
-      which.min(output$candidates$bic3)
-    ],
-    dds_branch = output$selection$dds_method,
-    selected_k = output$selection$selected_n_joinpoints,
-    bic_delta = output$selection$dds_bic_delta,
-    bic3_delta = output$selection$dds_bic3_delta,
-    delta_min = output$selection$dds_delta_min,
-    delta_max = output$selection$dds_delta_max,
-    sigma_squared = output$selection$dds_sigma_squared,
-    variance_df = output$selection$dds_variance_df
-  )
-}))
+summary <- do.call(
+  rbind,
+  lapply(names(results), function(case) {
+    fit <- results[[case]]$fit
+    output <- results[[case]]$output
+    data.frame(
+      case = case,
+      bic_minimizer_k = output$candidates$n_joinpoints[
+        which.min(output$candidates$bic)
+      ],
+      bic3_minimizer_k = output$candidates$n_joinpoints[
+        which.min(output$candidates$bic3)
+      ],
+      dds_branch = output$selection$dds_method,
+      selected_k = output$selection$selected_n_joinpoints,
+      bic_delta = output$selection$dds_bic_delta,
+      bic3_delta = output$selection$dds_bic3_delta,
+      delta_min = output$selection$dds_delta_min,
+      delta_max = output$selection$dds_delta_max,
+      sigma_squared = output$selection$dds_sigma_squared,
+      variance_df = output$selection$dds_variance_df
+    )
+  })
+)
 utils::write.csv(
   summary,
   file.path(output_dir, "crtrend-reference.csv"),

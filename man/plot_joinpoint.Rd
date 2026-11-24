@@ -9,6 +9,8 @@ plot_joinpoint(
   group_id = NULL,
   facet = TRUE,
   scales = c("free_y", "fixed", "free_x", "free"),
+  ncol = NULL,
+  nrow = NULL,
   show_points = TRUE,
   show_joinpoints = TRUE,
   show_apc = FALSE,
@@ -22,7 +24,13 @@ plot_joinpoint(
   p_digits = 3L,
   point_size = 1.2,
   line_width = 0.6,
-  text_size = 3
+  text_size = 3,
+  apc_text_size = text_size,
+  overlay_by = NULL,
+  font_family = "sans",
+  aapc_layout = c("column", "row"),
+  aapc_text_size = text_size,
+  aapc_text_color = "black"
 )
 }
 \arguments{
@@ -31,23 +39,40 @@ plot_joinpoint(
 \item{group_id}{Optional integer vector selecting \code{model_info$group_id}.
 \code{NULL} selects every group.}
 
-\item{facet}{Logical; facet by all grouping variables. The default is
-\code{TRUE}.}
+\item{facet}{Logical; facet by grouping variables other than \code{overlay_by}.
+The default is \code{TRUE}.}
 
 \item{scales}{Scale setting passed to \code{\link[ggplot2:facet_wrap]{ggplot2::facet_wrap()}}.}
 
+\item{ncol}{Optional positive integer number of facet columns. Specify at
+most one of \code{ncol} and \code{nrow}; ignored when no facets are drawn.}
+
+\item{nrow}{Optional positive integer number of facet rows. Specify at most
+one of \code{ncol} and \code{nrow}; ignored when no facets are drawn.}
+
 \item{show_points}{Show the original observations.}
 
-\item{show_joinpoints}{Show vertical dashed lines at selected joinpoints.}
+\item{show_joinpoints}{Show vertical dashed lines at selected joinpoints.
+Lines are light grey by default and use the corresponding group colour
+when \code{overlay_by} is set.}
 
-\item{show_apc}{Label every successfully fitted segment with APC and its
-two-sided p-value.}
+\item{show_apc}{Label every successfully fitted segment with its APC value
+and significance stars. Labels are rotated to run parallel to their fitted
+lines and use the matching line colour.}
 
-\item{show_aapc}{Label every successfully fitted group with AAPC and its
-two-sided p-value.}
+\item{show_aapc}{Label every successfully fitted group and requested range
+with AAPC. AAPC
+values append one, two, or three stars for two-sided p-values below 0.05,
+0.01, or 0.001, respectively. With \code{overlay_by}, values for its levels
+are shown in their legend colours below a grey \verb{AAPC:} caption per panel.}
 
-\item{aapc_range}{\code{NULL} uses each group's complete fitted range. Otherwise,
-supply two integer years defining one common AAPC range.}
+\item{aapc_range}{AAPC ranges to display. \code{NULL} uses each group's complete
+fitted range, and a two-integer vector defines one common range. Supply
+one or more \code{"lastN"} shortcuts (for example, \code{"last10"}) to use each
+group's final \code{N} calendar years, or a list of \code{NULL}, two-year vectors,
+and \code{"lastN"} shortcuts to show multiple ranges. List names are shown in
+the labels; unnamed intervals use \verb{AAPC start-end:}. A \code{"lastN"} range
+uses all available years when a group has fewer than \code{N} years.}
 
 \item{ci_method}{Confidence-interval and p-value method passed to
 \code{\link[=calc_apc]{calc_apc()}} and the AAPC calculation. The default is \code{"EQ"}.}
@@ -61,14 +86,38 @@ supply two integer years defining one common AAPC range.}
 
 \item{estimate_digits}{Number of decimal places used for APC and AAPC.}
 
-\item{p_digits}{Number of decimal places used for p-values; smaller values
-are displayed with a less-than sign.}
+\item{p_digits}{Retained for backward compatibility and currently unused.}
 
 \item{point_size}{Size of the observed-data points.}
 
 \item{line_width}{Width of the fitted segment lines.}
 
-\item{text_size}{Size of APC and AAPC annotation text.}
+\item{text_size}{Default size of APC and AAPC annotation text.}
+
+\item{apc_text_size}{Size of APC labels. Defaults to \code{text_size}.}
+
+\item{overlay_by}{Optional single grouping-variable name, for example
+\code{"sex"}. Its levels share a panel and use distinct colour families with
+a legend; segments use progressively darker shades within each family.
+The remaining grouping variables define facets. \code{NULL} keeps the default
+segment colours and facets by every grouping variable. With \code{facet = FALSE},
+all selected groups share one panel.}
+
+\item{font_family}{Font family shared by axis titles, tick labels, facet
+labels, legends, and APC/AAPC annotations. The default is the portable
+system sans-serif family. For Chinese output, supply an installed family
+such as \code{"Heiti SC"}, \code{"Microsoft YaHei"}, or \code{"Noto Sans CJK SC"}.}
+
+\item{aapc_layout}{Layout for AAPC labels with \code{overlay_by}: \code{"column"}
+stacks the coloured values below the caption, while \code{"row"} places them
+after the caption on one line.}
+
+\item{aapc_text_size}{Size of AAPC labels, including the grey \verb{AAPC:}
+caption. Defaults to \code{text_size}.}
+
+\item{aapc_text_color}{One valid R colour used for AAPC labels when
+\code{overlay_by = NULL}. Defaults to \code{"black"}; overlay labels retain their
+group colours.}
 }
 \value{
 A \code{ggplot} object that can be modified with additional ggplot2
@@ -76,25 +125,38 @@ layers, scales, and themes.
 }
 \description{
 \code{plot_joinpoint()} draws the observed outcome, segment-specific fitted
-curves, and selected joinpoints from a \code{\link[=joinpoint]{joinpoint()}} result. Fitted segments
-use distinct colours. Optional labels show each segment's APC and p-value
-and each group's overall or custom-range AAPC and p-value.
+lines, and selected joinpoints from a \code{\link[=joinpoint]{joinpoint()}} result. By default,
+fitted segments use distinct colours. Optional labels show APC and AAPC
+values with significance stars.
 }
 \details{
-Each fitted segment uses 101 equally spaced prediction times together with
-all observed times in that segment. Predictions are on the original outcome
-scale, so log-linear segments are drawn as exponential curves rather than
-straight lines joining their endpoints. Every observed time is included
-exactly, and adjacent curves share the prediction at their joinpoint.
+Joinpoint regression is linear in \code{log(outcome)}. The plot therefore uses a
+logarithmic y-axis so each fitted segment is a straight line whose slope
+corresponds to its APC, while axis labels remain in the original outcome
+units. Each segment contains 101 equally spaced prediction times together
+with all observed times. Every observed time is included exactly, and
+adjacent lines share the prediction at their joinpoint.
 APC and AAPC labels use \code{\link[=calc_apc]{calc_apc()}} and the cached inference stored by
 \code{\link[=joinpoint]{joinpoint()}}; plotting does not refit model selection. The default AAPC is
 calculated separately over each group's complete fitted range.
+\code{aapc_range} can instead request one or more named ranges. For example,
+\code{list(overall = NULL, last10 = "last10", early = c(2000L, 2010L))}
+displays the complete-fit, last-ten-calendar-year, and early-period AAPCs.
 Consecutive APC labels alternate below and above their fitted segments and
-use an offset that keeps the text away from the line. Segment colours are
+use an offset that keeps the text away from the line. Their angle follows
+the segment slope on the plotted log10 outcome scale. Segment colours are
 intentionally not shown in a legend because their order follows time.
+Joinpoint reference lines are light grey by default. With \code{overlay_by},
+colour families identify that variable's levels; joinpoint lines, points,
+segment lines, and APC labels use matching shades from light to dark in time
+order. AAPC values for levels of \code{overlay_by} use their legend colours below
+a grey \verb{AAPC:} caption in each panel. If no grouping variables remain for
+faceting, the plot has a single panel. Set \code{aapc_layout = "row"} to place
+the caption and values on one line; the default \code{"column"} uses separated
+rows for legibility.
 
 APC and AAPC confidence intervals describe trend estimates and are not
-prediction intervals for the fitted curve. This function therefore does
+prediction intervals for the fitted line. This function therefore does
 not draw a confidence ribbon.
 }
 \examples{
@@ -116,5 +178,11 @@ fit <- joinpoint(
   n_eq = 19
 )
 plot_joinpoint(fit, show_apc = TRUE, show_aapc = TRUE)
+plot_joinpoint(
+  fit,
+  show_aapc = TRUE,
+  aapc_range = list(overall = NULL, last10 = "last10")
+)
+plot_joinpoint(fit, overlay_by = "sex", show_apc = TRUE)
 
 }

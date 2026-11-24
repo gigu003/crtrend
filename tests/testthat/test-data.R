@@ -76,7 +76,7 @@ test_that("Joinpoint rate samples can be fitted directly", {
 })
 
 test_that("crude rates use aggregated counts and populations", {
-  crude <- calc_crude_rate(jp_crude)
+  crude <- calc_cr(jp_crude)
 
   expect_named(crude, c("sex", "year", "count", "population", "rate", "se"))
   expect_equal(nrow(crude), nrow(jp_crude))
@@ -107,9 +107,10 @@ test_that("crude rates use aggregated counts and populations", {
 })
 
 test_that("age-adjusted rates use direct standardization", {
-  age_adjusted <- calc_age_adjusted_rate(
+  age_adjusted <- calc_asr(
     jp_age_adjusted,
-    age = "age_group"
+    age = "age_group",
+    std = "standard_population"
   )
   first <- subset(
     jp_age_adjusted,
@@ -152,9 +153,10 @@ test_that("age-adjusted rates and Joinpoint fits agree with V5.3", {
     envir = reference
   )
   expected <- reference$v5_3_age_adjusted
-  age_adjusted <- calc_age_adjusted_rate(
+  age_adjusted <- calc_asr(
     jp_age_adjusted,
-    age = "age_group"
+    age = "age_group",
+    std = "standard_population"
   )
   expected_rates <- expected[expected$model == 0L, ]
   expected_rates <- expected_rates[
@@ -321,9 +323,10 @@ test_that("Joinpoint 6.1 EQ audit inputs retain their diagnostic designs", {
 })
 
 test_that("max_jp changes the candidate range without changing the selected trend", {
-  age_adjusted <- calc_age_adjusted_rate(
+  age_adjusted <- calc_asr(
     jp_age_adjusted,
-    age = "age_group"
+    age = "age_group",
+    std = "standard_population"
   )
   max_values <- c(0L, 1L, 4L, 8L)
   fits <- lapply(max_values, function(max_jp) {
@@ -354,14 +357,14 @@ test_that("max_jp changes the candidate range without changing the selected tren
 
 test_that("rate calculations reject invalid or duplicated age inputs", {
   expect_error(
-    calc_crude_rate(
+    calc_cr(
       data.frame(count = 1, population = 0),
       group_vars = character()
     ),
     "positive"
   )
   expect_error(
-    calc_age_adjusted_rate(
+    calc_asr(
       data.frame(
         sex = 1,
         age = c(1, 1),
@@ -369,6 +372,7 @@ test_that("rate calculations reject invalid or duplicated age inputs", {
         population = c(10, 10),
         standard_population = c(1, 1)
       ),
+      std = "standard_population",
       group_vars = "sex"
     ),
     "at most one observation per age stratum"

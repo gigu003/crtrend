@@ -186,25 +186,33 @@ nci_empirical_model_draws <- function(fit, n_resamples, seed = NULL) {
   if (is.null(grid)) {
     return(NULL)
   }
+  grid_solver <- compile_joinpoint_grid_solver(grid, data, fit$weighted)
+  if (is.null(grid_solver)) {
+    return(NULL)
+  }
   best_sse <- rep(Inf, n_boot)
   best_index <- rep(NA_integer_, n_boot)
-  solvers <- vector("list", length(grid))
-  for (index in seq_along(grid)) {
-    design <- joinpoint_design(grid[[index]], data)
-    solver <- tryCatch(
-      qr(joinpoint_whiten(data, design)),
-      error = function(error) NULL
+  batch_size <- max(
+    1L,
+    min(
+      128L,
+      as.integer(floor(2e6 / ncol(grid_solver$basis)))
     )
-    if (is.null(solver) || solver$rank < ncol(design)) {
-      next
-    }
-    solvers[[index]] <- solver
-    fitted <- qr.fitted(solver, transformed_response)
-    residuals <- transformed_response - fitted
-    sse <- colSums(residuals^2)
-    update <- is.finite(sse) & sse < best_sse
-    best_sse[update] <- sse[update]
-    best_index[update] <- index
+  )
+  first <- 1L
+  while (first <= n_boot) {
+    last <- min(n_boot, first + batch_size - 1L)
+    columns <- first:last
+    projection <- grid_projection_minima(
+      grid_solver,
+      transformed_response[, columns, drop = FALSE]
+    )
+    best_sse[columns] <- projection$sse
+    valid <- !is.na(projection$model_index)
+    best_index[columns[valid]] <- grid_solver$model_indices[
+      projection$model_index[valid]
+    ]
+    first <- last + 1L
   }
   if (all(is.na(best_index))) {
     return(NULL)
@@ -223,8 +231,10 @@ nci_empirical_model_draws <- function(fit, n_resamples, seed = NULL) {
   for (index in unique(best_index[!is.na(best_index)])) {
     selected <- which(best_index == index)
     candidate_joinpoints <- grid[[index]]
+    design <- joinpoint_design(candidate_joinpoints, data)
+    solver <- qr(joinpoint_whiten(data, design))
     candidate_slopes <- nci_grid_resampled_slopes(
-      solver = solvers[[index]],
+      solver = solver,
       transformed_response = transformed_response[, selected, drop = FALSE],
       n_joinpoints = fit$n_joinpoints
     )
