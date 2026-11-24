@@ -1,4 +1,4 @@
-# crtrend
+# crtrend <img src="man/figures/logo.png" align="right" height="139" alt="crtrend logo" />
 
 `crtrend` provides grouped joinpoint regression using base R weighted and
 ordinary least-squares fits. It returns fitted models and separate APC/AAPC
